@@ -24,7 +24,7 @@ docker exec -it my-spark-master bash
    Ensure that your Spark cluster is up and running, and start a Spark session or Spark SQL CLI.
 
    ``` CMD
-   spark sql
+   spark-sql
    ```
 
 3. **Create the Database**:

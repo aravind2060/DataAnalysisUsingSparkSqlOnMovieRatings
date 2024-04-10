@@ -6,7 +6,27 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 def set_database():
+    databases = spark.catalog.listDatabases()
+    database_names = [db.name for db in databases]
+    if "movie_ratings" not in database_names:
+        spark.sql("CREATE DATABASE IF NOT EXISTS movie_ratings")
     spark.sql("USE movie_ratings")
+
+    
+def load_data_if_not_exists():
+    set_database()
+    tables = spark.sql("SHOW TABLES IN movie_ratings")
+    tables_list = [row["tableName"] for row in tables.collect()]
+
+    if "movies" not in tables_list:
+        # Load movies data from CSV
+        movies_df = spark.read.csv("/data/input/movies.csv", header=True)
+        movies_df.write.saveAsTable("movies", mode="overwrite")
+
+    if "ratings" not in tables_list:
+        # Load ratings data from CSV
+        ratings_df = spark.read.csv("/data/input/ratings.csv", header=True)
+        ratings_df.write.saveAsTable("ratings", mode="overwrite")
 
 def count_movies_and_ratings():
     set_database()
@@ -19,9 +39,9 @@ def count_movies_and_ratings():
 def average_rating_per_movie():
     set_database()
     avg_rating_per_movie = spark.sql("""
-    SELECT movie_id, AVG(rating) AS avg_rating
+    SELECT movieId, AVG(rating) AS avg_rating
     FROM ratings
-    GROUP BY movie_id
+    GROUP BY movieId
     """)
 
     avg_rating_per_movie.write.csv('/data/output/avg_rating_per_movie.csv', header=True)
@@ -29,60 +49,62 @@ def average_rating_per_movie():
 def top_rated_movies():
     set_database()
     top_rated_movies = spark.sql("""
-    SELECT m.movie_id, m.title, AVG(r.rating) AS avg_rating
+    SELECT m.movieId, m.title, AVG(r.rating) AS avg_rating
     FROM movies m
-    JOIN ratings r ON m.movie_id = r.movie_id
-    GROUP BY m.movie_id, m.title
+    JOIN ratings r ON m.movieId = r.movieId
+    GROUP BY m.movieId, m.title
     ORDER BY avg_rating DESC
     LIMIT 10
     """)
 
     top_rated_movies.write.csv('/data/output/top_rated_movies.csv', header=True)
 
+
 def rating_rank_per_genre():
     set_database()
     rating_rank_per_genre = spark.sql("""
-    SELECT movie_id, title, genre, RANK() OVER (PARTITION BY genre ORDER BY avg_rating DESC) AS genre_rank
+    SELECT movieId, title, genre, RANK() OVER (PARTITION BY genre ORDER BY avg_rating DESC) AS genre_rank
     FROM (
-        SELECT m.movie_id, m.title, m.genre, AVG(r.rating) AS avg_rating
+        SELECT m.movieId, m.title, m.genre, AVG(r.rating) AS avg_rating
         FROM movies m
-        JOIN ratings r ON m.movie_id = r.movie_id
-        GROUP BY m.movie_id, m.title, m.genre
+        JOIN ratings r ON m.movieId = r.movieId
+        GROUP BY m.movieId, m.title, m.genre
     ) AS genre_ratings
     """)
 
     rating_rank_per_genre.write.csv('/data/output/rating_rank_per_genre.csv', header=True)
 
-def top_n_recommendations(given_user_id, N):
+def top_n_recommendations(given_userId, N):
     set_database()
     top_n_recommendations = spark.sql(f"""
     WITH user_rated_movies AS (
-        SELECT movie_id
+        SELECT movieId
         FROM ratings
-        WHERE user_id = {given_user_id}
+        WHERE userId = {given_userId}
     ),
     avg_movie_ratings AS (
-        SELECT movie_id, AVG(rating) AS avg_rating
+        SELECT movieId, AVG(rating) AS avg_rating
         FROM ratings
-        WHERE movie_id NOT IN (SELECT movie_id FROM user_rated_movies)
-        GROUP BY movie_id
+        WHERE movieId NOT IN (SELECT movieId FROM user_rated_movies)
+        GROUP BY movieId
     )
-    SELECT m.movie_id, m.title, r.avg_rating
+    SELECT m.movieId, m.title, r.avg_rating
     FROM movies m
-    JOIN avg_movie_ratings r ON m.movie_id = r.movie_id
+    JOIN avg_movie_ratings r ON m.movieId = r.movieId
     ORDER BY r.avg_rating DESC
     LIMIT {N}
     """)
 
-    top_n_recommendations.write.csv(f'/data/output/top_n_recommendations_{given_user_id}.csv', header=True)
+    top_n_recommendations.write.csv(f'/data/output/top_n_recommendations_{given_userId}.csv', header=True)
+
 
 def diverse_users(threshold):
     set_database()
     diverse_users = spark.sql(f"""
-    SELECT user_id, COUNT(DISTINCT genre) AS genre_count
+    SELECT userId, COUNT(DISTINCT genre) AS genre_count
     FROM ratings r
-    JOIN movies m ON r.movie_id = m.movie_id
-    GROUP BY user_id
+    JOIN movies m ON r.movieId = m.movieId
+    GROUP BY userId
     HAVING genre_count >= {threshold}
     """)
 
@@ -93,7 +115,7 @@ def average_rating_per_genre():
     avg_rating_per_genre = spark.sql("""
     SELECT genre, AVG(r.rating) AS avg_genre_rating
     FROM movies m
-    JOIN ratings r ON m.movie_id = r.movie_id
+    JOIN ratings r ON m.movieId = r.movieId
     GROUP BY genre
     ORDER BY avg_genre_rating DESC
     """)
@@ -102,10 +124,11 @@ def average_rating_per_genre():
 
 # Example usage
 if __name__ == "__main__":
+    load_data_if_not_exists()  # Load data into tables only if they don't exist
     count_movies_and_ratings()
     average_rating_per_movie()
     top_rated_movies()
     rating_rank_per_genre()
-    top_n_recommendations(1, 10)  # assuming user_id 1 and top 10 movies
+    top_n_recommendations(1, 10)  # assuming userId 1 and top 10 movies
     diverse_users(5)  # assuming threshold of 5 genres
     average_rating_per_genre()
