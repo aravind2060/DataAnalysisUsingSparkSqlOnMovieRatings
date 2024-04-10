@@ -122,6 +122,69 @@ def average_rating_per_genre():
 
     avg_rating_per_genre.write.csv('/data/output/avg_rating_per_genre.csv', header=True)
 
+def similar_users(userId):
+    set_database()
+    similar_users = spark.sql(f"""
+    SELECT r1.userId, COUNT(*) AS common_movies
+    FROM ratings r1
+    JOIN ratings r2 ON r1.movieId = r2.movieId
+    WHERE r1.userId != r2.userId
+    AND r2.userId = {userId}
+    GROUP BY r1.userId
+    ORDER BY common_movies DESC
+    """)
+    similar_users.write.csv('/data/output/similar_users.csv', header=True)
+    
+def low_avg_rating_genres():
+    set_database()
+    low_avg_rating_genres = spark.sql("""
+    SELECT genre, AVG(r.rating) AS avg_genre_rating
+    FROM movies m
+    JOIN ratings r ON m.movieId = r.movieId
+    GROUP BY genre
+    HAVING AVG(r.rating) < (
+        SELECT AVG(rating) FROM ratings
+    )
+    ORDER BY avg_genre_rating ASC
+    """)
+    low_avg_rating_genres.write.csv('/data/output/low_avg_rating_genres.csv', header=True)
+
+def high_avg_low_count_movies():
+    set_database()
+    high_avg_low_count_movies = spark.sql("""
+    SELECT m.movieId, m.title, AVG(r.rating) AS avg_rating, COUNT(r.movieId) AS rating_count
+    FROM movies m
+    JOIN ratings r ON m.movieId = r.movieId
+    GROUP BY m.movieId, m.title
+    HAVING AVG(r.rating) > 4.5 AND COUNT(r.movieId) < 50
+    ORDER BY avg_rating DESC
+    """)
+    high_avg_low_count_movies.write.csv('/data/output/high_avg_low_count_movies.csv', header=True)
+    
+def most_active_users():
+    set_database()
+    most_active_users = spark.sql("""
+    SELECT userId, COUNT(*) AS num_ratings
+    FROM ratings
+    GROUP BY userId
+    ORDER BY num_ratings DESC
+    LIMIT 10
+    """)
+    most_active_users.write.csv('/data/output/most_active_users.csv', header=True)
+    
+def multi_genre_movies():
+    set_database()
+    multi_genre_movies = spark.sql("""
+    SELECT m.movieId, m.title, COUNT(DISTINCT m.genre) AS num_genres
+    FROM movies m
+    JOIN ratings r ON m.movieId = r.movieId
+    GROUP BY m.movieId, m.title
+    HAVING num_genres > 1
+    ORDER BY num_genres DESC
+    """)
+    multi_genre_movies.write.csv('/data/output/multi_genre_movies.csv', header=True)
+
+
 # Example usage
 if __name__ == "__main__":
     load_data_if_not_exists()  # Load data into tables only if they don't exist
@@ -132,3 +195,8 @@ if __name__ == "__main__":
     top_n_recommendations(1, 10)  # assuming userId 1 and top 10 movies
     diverse_users(5)  # assuming threshold of 5 genres
     average_rating_per_genre()
+    similar_users(10)
+    low_avg_rating_genres()
+    high_avg_low_count_movies()
+    most_active_users()
+    multi_genre_movies()
