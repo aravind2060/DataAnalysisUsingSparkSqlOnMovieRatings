@@ -3,6 +3,7 @@ version: '3.8'
 services:
   spark-master:
     image: bitnami/spark:latest
+    container_name: my-spark-master
     ports:
       - "8080:8080"  # Spark Master Web UI
       - "7077:7077"  # Spark Master communication port for Spark workers
